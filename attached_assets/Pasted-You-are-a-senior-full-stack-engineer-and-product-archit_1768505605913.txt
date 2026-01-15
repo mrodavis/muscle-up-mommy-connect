@@ -1,0 +1,214 @@
+You are a senior full-stack engineer and product architect.
+
+Your task is to design and scaffold a production-grade MVP for a mobile-first social platform called **Muscle Up Mommy Connect**.
+
+This platform is conceptually similar to **AfroTech Connect**, but built for moms and maternal wellness, with integrated community, fitness programs, events, and in-app commerce.
+
+==============================
+CORE PRODUCT GOAL
+==============================
+Build a scalable social + fitness + events + commerce platform that allows Muscle Up Mommy to operate as a full ecosystem, not just a brand.
+
+The system must support:
+- Community networking
+- Membership tiers
+- Fitness program management
+- Events & meetups
+- Gym discovery
+- In-app store integration
+- AI-ready customer support and coaching hooks
+
+This is NOT a demo app. It must be architected for real users and future scale.
+
+==============================
+TECH REQUIREMENTS
+==============================
+Frontend:
+- React Native (Expo preferred)
+- Mobile-first design
+- Component-driven architecture
+
+Backend:
+- Node.js + Express
+- API-first architecture
+
+Database:
+- PostgreSQL
+- Prisma ORM
+
+Auth:
+- Email + password authentication
+- JWT-based auth
+- Role-based access (user, coach, admin)
+
+General:
+- Modular, scalable codebase
+- Environment variables for secrets
+- Clean, commented, production-ready code
+- No hardcoded secrets
+- No mock-only shortcuts
+
+==============================
+BRANDING & UI SYSTEM (REQUIRED)
+==============================
+The application must strictly follow the Muscle Up Mommy product brand theme.
+
+PRIMARY COLORS:
+- Black: #0B0B0B (primary background)
+- White: #FFFFFF (primary text and contrast)
+- Soft Blush Pink: #F6C1CC (primary accent)
+
+SECONDARY / NEUTRAL COLORS:
+- Charcoal: #1A1A1A (cards, containers)
+- Light Gray: #EDEDED (dividers, borders)
+- Muted Rose: #E8AEB7 (badges, highlights only)
+
+DESIGN PRINCIPLES:
+- Calm, confident, premium wellness aesthetic
+- Feminine but strong
+- Dark-mode-first
+- Minimalist and uncluttered
+- No bright or neon colors
+- No gold, yellow, metallics, or gradients
+- Avoid default blue/green UI styles
+
+IMPLEMENTATION REQUIREMENTS:
+- Create a centralized theme system (theme.ts)
+- Export color tokens, spacing, typography
+- All components must consume values from the theme
+- No hardcoded color values inside components
+- Consistent spacing, subtle rounded cards
+- Soft pink used sparingly for CTAs and active states
+
+Apply this brand system consistently across:
+- Auth screens
+- Community feed
+- Profiles
+- Groups
+- Events
+- Store
+- Fitness Reboot module
+
+==============================
+CORE FEATURES (MVP)
+==============================
+
+1. AUTHENTICATION
+- User registration & login
+- JWT auth
+- Role support (user, coach, admin)
+- Membership tiers: Free, Premium, VIP
+
+2. USER PROFILES
+- Name
+- Location (city/state)
+- Stage of motherhood (pregnant, postpartum, toddler, etc.)
+- Interests (fitness, pumping, wellness, events)
+- Profile photo
+- Membership tier
+
+3. COMMUNITY FEED
+- Create posts
+- Like & comment
+- Group-based posts
+- Basic moderation flags
+
+4. GROUPS / CIRCLES
+- Create & join groups
+- Public groups
+- Premium-only groups
+- Group feeds
+
+5. EVENTS
+- Create events
+- RSVP system
+- Event detail pages
+- Visibility based on membership tier
+- Designed for future QR check-in support
+
+6. GYM LOCATOR
+- Gym model:
+  - Name
+  - Address
+  - City/state
+  - Geo coordinates
+  - Partner flag
+- Map-based discovery
+- Google Maps–ready integration
+
+7. STORE (SHOPIFY-READY)
+- Product model
+- Product listings
+- Checkout redirect placeholder
+- Architecture prepared for future Shopify API integration
+
+8. FITNESS REBOOT MODULE
+- Program enrollment
+- Progress tracking
+- Habit check-ins
+- Workout/content placeholders
+- Coach/admin role support
+- Designed for future AI fitness coaching
+
+9. ADMIN & MODERATION
+- Admin role
+- Manage users, posts, groups, events
+- Basic admin dashboard endpoints
+
+==============================
+AI-READINESS (CRITICAL)
+==============================
+Do NOT build the AI itself.
+
+Instead:
+- Create placeholder services for:
+  - AI customer support
+  - AI fitness coach
+- Design APIs so AI can be plugged in later
+- No hardcoded AI logic
+- Clean service boundaries
+
+==============================
+DELIVERABLES
+==============================
+1. Clear project folder structure
+2. Prisma database schema
+3. Express API routes
+4. Auth middleware
+5. React Native screens:
+   - Login / Register
+   - Feed
+   - Profile
+   - Groups
+   - Events
+   - Store
+   - Fitness Reboot
+6. Centralized theme system
+7. README including:
+   - Setup instructions
+   - Environment variables
+   - How to run frontend & backend
+   - Architecture overview
+
+==============================
+IMPORTANT BEHAVIOR RULES
+==============================
+- Think before coding
+- Explain architecture decisions briefly
+- Ask clarifying questions ONLY if blocking
+- Default to best-practice assumptions
+- Do not over-engineer
+- Do not under-build
+- Avoid placeholder UI colors or demo shortcuts
+
+==============================
+EXECUTION ORDER
+==============================
+1. Propose system architecture
+2. Define data models (Prisma)
+3. Scaffold backend
+4. Scaffold frontend
+5. Apply branding system
+6. Document setup and usage
+
+Proceed step by step.
