@@ -1,25 +1,61 @@
-import { 
-  users, groups, posts, comments, events, gyms, products, fitnessPrograms, enrollments,
-  type User, type InsertUser, type Group, type InsertGroup, type Post, type InsertPost, 
-  type Event, type InsertEvent, type Gym, type InsertGym, type Product, type FitnessProgram
+import {
+  users,
+  groups,
+  posts,
+  comments,
+  postLikes,
+  events,
+  gyms,
+  products,
+  fitnessPrograms,
+  enrollments,
+  type User,
+  type InsertUser,
+  type Group,
+  type InsertGroup,
+  type Post,
+  type InsertPost,
+  type Event,
+  type InsertEvent,
+  type Gym,
+  type InsertGym,
+  type Product,
+  type FitnessProgram,
 } from "@shared/schema";
-import { db } from "./db";
-import { eq, desc } from "drizzle-orm";
+import { db, pool } from "./db";
+import { eq, desc, and, sql } from "drizzle-orm";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
-import { pool } from "./db";
 
 const PostgresSessionStore = connectPg(session);
 
+/* =========================
+   TYPES
+========================= */
+
+export type PostWithRelations = Post & {
+  author: Pick<User, "id" | "username" | "displayName" | "photoUrl">;
+  comments: { id: number }[];
+  likes: { userId: number }[];
+};
+
+/* =========================
+   STORAGE INTERFACE
+========================= */
+
 export interface IStorage {
-  // User
+  // Users
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
 
   // Posts
-  getPosts(groupId?: number): Promise<(Post & { author: User; comments: any[] })[]>;
+  getPosts(groupId?: number): Promise<PostWithRelations[]>;
   createPost(post: InsertPost): Promise<Post>;
+
+  // Likes
+  likePost(postId: number, userId: number): Promise<void>;
+  unlikePost(postId: number, userId: number): Promise<void>;
 
   // Groups
   getGroups(): Promise<Group[]>;
@@ -43,6 +79,10 @@ export interface IStorage {
   sessionStore: session.Store;
 }
 
+/* =========================
+   DATABASE STORAGE
+========================= */
+
 export class DatabaseStorage implements IStorage {
   sessionStore: session.Store;
 
@@ -53,13 +93,18 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
+  /* ---------- USERS ---------- */
+
   async getUser(id: number): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.username, username));
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.username, username));
     return user;
   }
 
@@ -68,18 +113,33 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async getPosts(groupId?: number): Promise<(Post & { author: User; comments: any[] })[]> {
-    const query = db.query.posts.findMany({
+  /* ---------- POSTS ---------- */
+
+  async getPosts(groupId?: number): Promise<PostWithRelations[]> {
+    return db.query.posts.findMany({
       where: groupId ? eq(posts.groupId, groupId) : undefined,
+      orderBy: desc(posts.createdAt),
       with: {
-        author: true,
+        author: {
+          columns: {
+            id: true,
+            username: true,
+            displayName: true,
+            photoUrl: true,
+          },
+        },
         comments: {
-          with: { author: true }
-        }
+          columns: {
+            id: true,
+          },
+        },
+        likes: {
+          columns: {
+            userId: true,
+          },
+        },
       },
-      orderBy: [desc(posts.createdAt)]
     });
-    return await query;
   }
 
   async createPost(post: InsertPost): Promise<Post> {
@@ -87,12 +147,62 @@ export class DatabaseStorage implements IStorage {
     return newPost;
   }
 
+  /* ---------- LIKES ---------- */
+
+  async likePost(postId: number, userId: number): Promise<void> {
+    await db.transaction(async (tx) => {
+      // Insert like (composite PK prevents duplicates)
+      const inserted = await tx
+        .insert(postLikes)
+        .values({ postId, userId })
+        .onConflictDoNothing()
+        .returning();
+
+      // Only increment if a row was actually inserted
+      if (inserted.length > 0) {
+        await tx
+          .update(posts)
+          .set({ likesCount: sql`${posts.likesCount} + 1` })
+          .where(eq(posts.id, postId));
+      }
+    });
+  }
+
+  async unlikePost(postId: number, userId: number): Promise<void> {
+    await db.transaction(async (tx) => {
+      const deleted = await tx
+        .delete(postLikes)
+        .where(
+          and(
+            eq(postLikes.postId, postId),
+            eq(postLikes.userId, userId),
+          ),
+        )
+        .returning();
+
+      // Only decrement if a row was actually deleted
+      if (deleted.length > 0) {
+        await tx
+          .update(posts)
+          .set({
+            likesCount: sql`GREATEST(${posts.likesCount} - 1, 0)`,
+          })
+          .where(eq(posts.id, postId));
+      }
+    });
+  }
+
+  /* ---------- GROUPS ---------- */
+
   async getGroups(): Promise<Group[]> {
-    return await db.select().from(groups);
+    return db.select().from(groups);
   }
 
   async getGroup(id: number): Promise<Group | undefined> {
-    const [group] = await db.select().from(groups).where(eq(groups.id, id));
+    const [group] = await db
+      .select()
+      .from(groups)
+      .where(eq(groups.id, id));
     return group;
   }
 
@@ -101,8 +211,10 @@ export class DatabaseStorage implements IStorage {
     return newGroup;
   }
 
+  /* ---------- EVENTS ---------- */
+
   async getEvents(): Promise<Event[]> {
-    return await db.select().from(events).orderBy(events.date);
+    return db.select().from(events).orderBy(events.date);
   }
 
   async createEvent(event: InsertEvent): Promise<Event> {
@@ -110,8 +222,10 @@ export class DatabaseStorage implements IStorage {
     return newEvent;
   }
 
+  /* ---------- GYMS ---------- */
+
   async getGyms(): Promise<Gym[]> {
-    return await db.select().from(gyms);
+    return db.select().from(gyms);
   }
 
   async createGym(gym: InsertGym): Promise<Gym> {
@@ -119,12 +233,16 @@ export class DatabaseStorage implements IStorage {
     return newGym;
   }
 
+  /* ---------- PRODUCTS ---------- */
+
   async getProducts(): Promise<Product[]> {
-    return await db.select().from(products);
+    return db.select().from(products);
   }
 
+  /* ---------- FITNESS ---------- */
+
   async getPrograms(): Promise<FitnessProgram[]> {
-    return await db.select().from(fitnessPrograms);
+    return db.select().from(fitnessPrograms);
   }
 }
 

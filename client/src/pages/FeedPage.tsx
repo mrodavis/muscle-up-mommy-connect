@@ -3,30 +3,83 @@ import { usePosts, useCreatePost } from "@/hooks/use-posts";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/Button";
 import { formatDistanceToNow } from "date-fns";
-import { Heart, MessageCircle, Share2, Image as ImageIcon, Send } from "lucide-react";
+import { Heart, MessageCircle, Share2, Send } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertPostSchema } from "@shared/schema";
-import { z } from "zod";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/Input";
 import { Textarea } from "@/components/ui/textarea";
+import { useQueryClient } from "@tanstack/react-query";
+import { api } from "@shared/routes";
+import { z } from "zod";
+
+/* =========================
+   FRONTEND POST SCHEMA
+   (client-owned fields ONLY)
+========================= */
+
+const createPostSchema = z.object({
+  content: z.string().min(1, "Post cannot be empty"),
+  mediaUrl: z.string().optional(),
+});
+
+/* =========================
+   TYPES
+========================= */
+
+type FeedPost = {
+  id: number;
+  content: string;
+  mediaUrl?: string;
+  createdAt: string;
+  likesCount: number;
+  likes: { userId: number }[];
+  comments?: { id: number }[];
+  author: {
+    id: number;
+    username: string;
+    displayName: string;
+    photoUrl?: string;
+  };
+};
+
+/* =========================
+   API HELPERS
+========================= */
+
+async function likePost(postId: number) {
+  await fetch(`/api/posts/${postId}/like`, { method: "POST" });
+}
+
+async function unlikePost(postId: number) {
+  await fetch(`/api/posts/${postId}/like`, { method: "DELETE" });
+}
+
+/* =========================
+   COMPONENT
+========================= */
 
 export default function FeedPage() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const queryKey = [api.posts.list.path, "all"];
+
   const { data: posts, isLoading } = usePosts();
   const createPost = useCreatePost();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   const form = useForm({
-    resolver: zodResolver(insertPostSchema),
+    resolver: zodResolver(createPostSchema),
     defaultValues: {
       content: "",
-      userId: user?.id || 0,
       mediaUrl: "",
     },
   });
+
+  /* =========================
+     CREATE POST
+  ========================= */
 
   const onSubmit = form.handleSubmit((data) => {
     createPost.mutate(data, {
@@ -37,33 +90,72 @@ export default function FeedPage() {
     });
   });
 
+  /* =========================
+     LIKE TOGGLE (OPTIMISTIC)
+  ========================= */
+
+  const handleLikeToggle = async (post: FeedPost) => {
+    if (!user) return;
+
+    const hasLiked = post.likes.some((l) => l.userId === user.id);
+
+    // optimistic UI update
+    queryClient.setQueryData<FeedPost[]>(queryKey, (old) =>
+      old?.map((p) =>
+        p.id === post.id
+          ? {
+              ...p,
+              likes: hasLiked
+                ? p.likes.filter((l) => l.userId !== user.id)
+                : [...p.likes, { userId: user.id }],
+              likesCount: hasLiked
+                ? p.likesCount - 1
+                : p.likesCount + 1,
+            }
+          : p,
+      ),
+    );
+
+    try {
+      hasLiked ? await unlikePost(post.id) : await likePost(post.id);
+    } catch {
+      // rollback if API fails
+      queryClient.invalidateQueries({ queryKey });
+    }
+  };
+
   return (
     <MobileLayout>
       <div className="p-4 space-y-6">
+        {/* ================= HEADER ================= */}
         <header className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-2xl font-bold">Community Feed</h1>
-            <p className="text-muted-foreground text-sm">Welcome back, {user?.displayName}</p>
+            <p className="text-muted-foreground text-sm">
+              Welcome back, {user?.displayName}
+            </p>
           </div>
-          
+
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
               <Button size="sm" className="rounded-full w-10 h-10 p-0 shadow-lg shadow-primary/20">
-                <span className="text-xl leading-none mb-0.5">+</span>
+                <span className="text-xl">+</span>
               </Button>
             </DialogTrigger>
+
             <DialogContent className="bg-card border-white/10 text-white max-w-sm mx-auto">
               <DialogHeader>
                 <DialogTitle>Create Post</DialogTitle>
               </DialogHeader>
+
               <form onSubmit={onSubmit} className="space-y-4 mt-4">
-                <Textarea 
-                  placeholder="Share your journey..." 
+                <Textarea
+                  placeholder="Share your journey..."
                   className="bg-background border-white/10 resize-none h-32"
                   {...form.register("content")}
                 />
-                <Input 
-                  placeholder="Image URL (optional)" 
+                <Input
+                  placeholder="Image URL (optional)"
                   {...form.register("mediaUrl")}
                 />
                 <Button className="w-full" isLoading={createPost.isPending}>
@@ -74,60 +166,96 @@ export default function FeedPage() {
           </Dialog>
         </header>
 
+        {/* ================= FEED ================= */}
         {isLoading ? (
           <div className="space-y-4">
-            {[1, 2, 3].map(i => (
+            {[1, 2, 3].map((i) => (
               <div key={i} className="h-48 bg-card animate-pulse rounded-2xl" />
             ))}
           </div>
         ) : (
           <div className="space-y-6">
-            {posts?.map((post) => (
-              <article key={post.id} className="bg-card rounded-2xl p-5 border border-white/5 shadow-sm">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 rounded-full bg-secondary overflow-hidden border border-white/10">
-                    {post.author.photoUrl ? (
-                      <img src={post.author.photoUrl} alt={post.author.username} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-muted-foreground font-bold">
-                        {post.author.displayName[0]}
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-sm">{post.author.displayName}</h3>
-                    <p className="text-xs text-muted-foreground">
-                      {post.createdAt && formatDistanceToNow(new Date(post.createdAt), { addSuffix: true })}
-                    </p>
-                  </div>
-                </div>
+            {posts?.map((post: FeedPost) => {
+              const hasLiked = post.likes.some(
+                (l) => l.userId === user?.id,
+              );
 
-                <p className="text-sm leading-relaxed text-white/90 mb-4 whitespace-pre-wrap">
-                  {post.content}
-                </p>
+              return (
+                <article
+                  key={post.id}
+                  className="bg-card rounded-2xl p-5 border border-white/5 shadow-sm"
+                >
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-full bg-secondary overflow-hidden border border-white/10 flex items-center justify-center">
+                      {post.author.photoUrl ? (
+                        <img
+                          src={post.author.photoUrl}
+                          alt={post.author.username}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <span className="font-bold text-muted-foreground">
+                          {post.author.displayName[0]}
+                        </span>
+                      )}
+                    </div>
 
-                {post.mediaUrl && (
-                  <div className="rounded-xl overflow-hidden mb-4 border border-white/5 bg-background/50">
-                    {/* Unsplash fallback for demo if needed */}
-                    {/* Descriptive comment: User provided content, dynamic */}
-                    <img src={post.mediaUrl} alt="Post content" className="w-full h-auto max-h-80 object-cover" />
+                    <div>
+                      <h3 className="font-semibold text-sm">
+                        {post.author.displayName}
+                      </h3>
+                      <p className="text-xs text-muted-foreground">
+                        {formatDistanceToNow(new Date(post.createdAt), {
+                          addSuffix: true,
+                        })}
+                      </p>
+                    </div>
                   </div>
-                )}
 
-                <div className="flex items-center justify-between pt-4 border-t border-white/5">
-                  <button className="flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors text-sm">
-                    <Heart className="w-5 h-5" /> <span>{post.likesCount}</span>
-                  </button>
-                  <button className="flex items-center gap-2 text-muted-foreground hover:text-white transition-colors text-sm">
-                    <MessageCircle className="w-5 h-5" /> <span>{post.comments?.length || 0}</span>
-                  </button>
-                  <button className="flex items-center gap-2 text-muted-foreground hover:text-white transition-colors text-sm">
-                    <Share2 className="w-5 h-5" />
-                  </button>
-                </div>
-              </article>
-            ))}
-            
+                  <p className="text-sm leading-relaxed text-white/90 mb-4 whitespace-pre-wrap">
+                    {post.content}
+                  </p>
+
+                  {post.mediaUrl && (
+                    <div className="rounded-xl overflow-hidden mb-4 border border-white/5">
+                      <img
+                        src={post.mediaUrl}
+                        alt="Post content"
+                        className="w-full max-h-80 object-cover"
+                      />
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between pt-4 border-t border-white/5">
+                    <button
+                      onClick={() => handleLikeToggle(post)}
+                      className={`flex items-center gap-2 text-sm transition-colors ${
+                        hasLiked
+                          ? "text-primary"
+                          : "text-muted-foreground hover:text-primary"
+                      }`}
+                    >
+                      <Heart
+                        className={`w-5 h-5 ${
+                          hasLiked ? "fill-primary" : ""
+                        }`}
+                      />
+                      <span>{post.likesCount}</span>
+                    </button>
+
+                    <button className="flex items-center gap-2 text-muted-foreground hover:text-white text-sm">
+                      <MessageCircle className="w-5 h-5" />
+                      <span>{post.comments?.length || 0}</span>
+                    </button>
+
+                    <button className="flex items-center gap-2 text-muted-foreground hover:text-white text-sm">
+                      <Share2 className="w-5 h-5" />
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+
             {posts?.length === 0 && (
               <div className="text-center py-12 text-muted-foreground">
                 <p>No posts yet. Be the first to share!</p>
