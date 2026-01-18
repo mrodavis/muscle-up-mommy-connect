@@ -1,6 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl } from "@shared/routes";
-import { z } from "zod";
 
 /* =========================
    TYPES
@@ -24,6 +23,7 @@ export type CommentWithAuthor = {
 
 export function useComments(postId: number) {
   return useQuery<CommentWithAuthor[]>({
+    enabled: postId > 0,
     queryKey: [api.comments.listByPost.path, postId],
     queryFn: async () => {
       const url = buildUrl(api.comments.listByPost.path, { id: postId });
@@ -37,12 +37,11 @@ export function useComments(postId: number) {
         await res.json(),
       );
     },
-    enabled: !!postId,
   });
 }
 
 /* =========================
-   CREATE COMMENT
+   CREATE COMMENT (OPTIMISTIC)
 ========================= */
 
 export function useCreateComment(postId: number) {
@@ -71,17 +70,26 @@ export function useCreateComment(postId: number) {
 
     /* ---------- OPTIMISTIC UPDATE ---------- */
     onMutate: async (newComment) => {
-      const queryKey = [api.comments.listByPost.path, postId];
+      const commentsKey = [api.comments.listByPost.path, postId];
+      const postsKey = [api.posts.list.path, "all"];
 
-      await queryClient.cancelQueries({ queryKey });
+      // Stop outgoing queries
+      await queryClient.cancelQueries({ queryKey: commentsKey });
+      await queryClient.cancelQueries({ queryKey: postsKey });
 
       const previousComments =
-        queryClient.getQueryData<CommentWithAuthor[]>(queryKey);
+        queryClient.getQueryData<CommentWithAuthor[]>(commentsKey);
 
-      queryClient.setQueryData<CommentWithAuthor[]>(queryKey, (old) => [
-        ...(old ?? []),
+      const previousPosts =
+        queryClient.getQueryData<any[]>(postsKey);
+
+      const optimisticId = Date.now();
+
+      // 1️⃣ Optimistically add comment
+      queryClient.setQueryData<CommentWithAuthor[]>(commentsKey, (old = []) => [
+        ...old,
         {
-          id: Date.now(), // temporary client id
+          id: optimisticId,
           content: newComment.content,
           createdAt: new Date().toISOString(),
           author: {
@@ -93,7 +101,19 @@ export function useCreateComment(postId: number) {
         },
       ]);
 
-      return { previousComments };
+      // 2️⃣ Optimistically increment comment count on post
+      queryClient.setQueryData<any[]>(postsKey, (old) =>
+        old?.map((post) =>
+          post.id === postId
+            ? {
+                ...post,
+                comments: [...(post.comments ?? []), { id: optimisticId }],
+              }
+            : post,
+        ),
+      );
+
+      return { previousComments, previousPosts };
     },
 
     /* ---------- ROLLBACK ---------- */
@@ -104,12 +124,23 @@ export function useCreateComment(postId: number) {
           context.previousComments,
         );
       }
+
+      if (context?.previousPosts) {
+        queryClient.setQueryData(
+          [api.posts.list.path, "all"],
+          context.previousPosts,
+        );
+      }
     },
 
-    /* ---------- SYNC ---------- */
+    /* ---------- FINAL SYNC ---------- */
     onSettled: () => {
       queryClient.invalidateQueries({
         queryKey: [api.comments.listByPost.path, postId],
+      });
+
+      queryClient.invalidateQueries({
+        queryKey: [api.posts.list.path, "all"],
       });
     },
   });
