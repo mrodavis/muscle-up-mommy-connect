@@ -3,7 +3,11 @@ import { type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth } from "./auth";
 import { api } from "@shared/routes";
-import { z } from "zod";
+import { insertCommentSchema } from "@shared/schema";
+
+/* ======================================================
+   ROUTE REGISTRATION
+====================================================== */
 
 export async function registerRoutes(
   httpServer: Server,
@@ -41,7 +45,6 @@ export async function registerRoutes(
       .omit({ userId: true })
       .parse(req.body);
 
-
     const post = await storage.createPost({
       ...postData,
       userId: req.user.id,
@@ -51,7 +54,7 @@ export async function registerRoutes(
   });
 
   /* =========================
-     LIKES (REAL)
+     LIKES
   ========================= */
 
   app.post("/api/posts/:id/like", async (req, res) => {
@@ -76,6 +79,44 @@ export async function registerRoutes(
 
     await storage.unlikePost(postId, req.user.id);
     res.sendStatus(204);
+  });
+
+  /* =========================
+     COMMENTS
+  ========================= */
+
+  // List comments for a post
+  app.get("/api/posts/:id/comments", async (req, res) => {
+    const postId = Number(req.params.id);
+
+    if (Number.isNaN(postId)) {
+      return res.status(400).json({ message: "Invalid post id" });
+    }
+
+    const comments = await storage.getCommentsByPost(postId);
+    res.json(comments);
+  });
+
+  // Create a comment
+  app.post("/api/posts/:id/comments", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+
+    const postId = Number(req.params.id);
+    if (Number.isNaN(postId)) {
+      return res.status(400).json({ message: "Invalid post id" });
+    }
+
+    const commentData = insertCommentSchema
+      .omit({ userId: true, postId: true })
+      .parse(req.body);
+
+    const comment = await storage.createComment({
+      postId,
+      userId: req.user.id,
+      content: commentData.content,
+    });
+
+    res.status(201).json(comment);
   });
 
   /* =========================
@@ -131,7 +172,7 @@ export async function registerRoutes(
   });
 
   /* =========================
-     PRODUCTS (SHOP)
+     PRODUCTS
   ========================= */
 
   app.get(api.products.list.path, async (_req, res) => {

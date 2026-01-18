@@ -39,6 +39,14 @@ export type PostWithRelations = Post & {
   likes: { userId: number }[];
 };
 
+export type CommentWithAuthor = {
+  id: number;
+  content: string;
+  createdAt: Date | null;
+  author: Pick<User, "id" | "username" | "displayName" | "photoUrl">;
+};
+
+
 /* =========================
    STORAGE INTERFACE
 ========================= */
@@ -56,6 +64,15 @@ export interface IStorage {
   // Likes
   likePost(postId: number, userId: number): Promise<void>;
   unlikePost(postId: number, userId: number): Promise<void>;
+
+  // Comments
+  getCommentsByPost(postId: number): Promise<CommentWithAuthor[]>;
+  createComment(input: {
+    postId: number;
+    userId: number;
+    content: string;
+  }): Promise<Comment>;
+
 
   // Groups
   getGroups(): Promise<Group[]>;
@@ -145,6 +162,37 @@ export class DatabaseStorage implements IStorage {
   async createPost(post: InsertPost): Promise<Post> {
     const [newPost] = await db.insert(posts).values(post).returning();
     return newPost;
+  }
+/* ---------- COMMENTS ---------- */
+
+  async getCommentsByPost(postId: number): Promise<CommentWithAuthor[]> {
+    return db.query.comments.findMany({
+      where: eq(comments.postId, postId),
+      orderBy: desc(comments.createdAt),
+      with: {
+        author: {
+          columns: {
+            id: true,
+            username: true,
+            displayName: true,
+            photoUrl: true,
+          },
+        },
+      },
+    });
+  }
+
+  async createComment(input: {
+    postId: number;
+    userId: number;
+    content: string;
+  }): Promise<Comment> {
+    const [comment] = await db
+      .insert(comments)
+      .values(input)
+      .returning();
+
+    return comment;
   }
 
   /* ---------- LIKES ---------- */
